@@ -1,0 +1,100 @@
+---
+title: "tutoriel"
+output: github_document
+date: "2022-10-05"
+---
+```{r}
+library(dada2)
+library(phyloseq)
+library(DECIPHER)
+library(phangorn)
+library(ggplot2)
+library(gridExtra)
+```
+```{r}
+miseq_path <- "/home/rstudio/MiSeq_SOP"
+list.files(miseq_path)
+```
+
+```{r}
+fnFs <- sort(list.files(miseq_path, pattern="_R1_001.fastq"))
+fnRs <- sort(list.files(miseq_path, pattern="_R2_001.fastq"))
+sampleNames <- sapply(strsplit(fnFs, "_"), `[`, 1)
+fnFs <- file.path(miseq_path, fnFs)
+fnRs <- file.path(miseq_path, fnRs)
+fnFs[1:3]
+```
+
+```{r}
+plotQualityProfile(fnFs[1:2])
+```
+```{r}
+plotQualityProfile(fnRs[1:2])
+```
+
+```{r}
+filt_path <- file.path(miseq_path, "filtered") # Place filtered files in filtered/ subdirectory
+if(!file_test("-d", filt_path)) dir.create(filt_path)
+filtFs <- file.path(filt_path, paste0(sampleNames, "_F_filt.fastq.gz"))
+filtRs <- file.path(filt_path, paste0(sampleNames, "_R_filt.fastq.gz"))
+```
+
+```{r}
+out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen=c(240,160),
+              maxN=0, maxEE=c(2,2), truncQ=2, rm.phix=TRUE,
+              compress=TRUE, multithread=TRUE) # On Windows set multithread=FALSE
+head(out)
+```
+
+?filterAndTrim
+?truncQ
+
+```{r}
+derepFs <- derepFastq(filtFs, verbose=TRUE)
+derepRs <- derepFastq(filtRs, verbose=TRUE)
+# Name the derep-class objects by the sample names
+names(derepFs) <- sampleNames
+names(derepRs) <- sampleNames
+```
+
+```{r}
+errF <- learnErrors(filtFs, multithread=TRUE)
+errF <- learnErrors(filtRs, multithread=TRUE)
+```
+```{r}
+plotErrors(errF)
+plotErrors(errR)
+```
+
+```{r}
+dadaFs <- dada(derepFs, err=errF, multithread=TRUE)
+dadaRs <- dada(derepRs, err=errR, multithread=TRUE)
+```
+```{r}
+dadaFs[[1]]
+```
+
+```{r}
+mergers <- mergePairs(dadaFs, derepFs, dadaRs, derepRs)
+```
+
+```{r}
+seqtabAll <- makeSequenceTable(mergers[!grepl("Mock", names(mergers))])
+```
+
+
+```{r}
+table(nchar(getSequences(seqtabAll)))
+```
+
+```{r}
+seqtabNoC <- removeBimeraDenovo(seqtabAll)
+```
+
+```{r}
+fastaRef <- "home/rstudio/rdp_train_set_16.fa.gz"
+taxTab <- assignTaxonomy(seqtabNoC, refFasta = fastaRef, multithread=TRUE)
+unname(head(taxTab))
+```
+
+
